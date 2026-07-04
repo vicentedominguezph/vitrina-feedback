@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vitrina Feedback</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f4f4f7;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    padding: 24px;
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+  }
+  .card img {
+    width: 100%;
+    border-radius: 12px;
+    display: block;
+    margin-bottom: 16px;
+  }
+  .buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
+  .buttons button {
+    flex: 1;
+    font-size: 1.1rem;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    background: #eee;
+    transition: transform 0.1s ease, background 0.2s ease;
+  }
+  .buttons button:hover { background: #e0e0e0; }
+  .buttons button:active { transform: scale(0.96); }
+  #like-btn.active { background: #d4f7dc; }
+  #dislike-btn.active { background: #ffd9d9; }
+
+  .comment-box {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .comment-box input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+  }
+  .comment-box button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #4f46e5;
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  .comment-box button:hover { background: #4338ca; }
+
+  .counters {
+    display: flex;
+    justify-content: space-around;
+    font-size: 1rem;
+    color: #333;
+    border-top: 1px solid #eee;
+    padding-top: 14px;
+  }
+
+  .status {
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: #888;
+    min-height: 18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <img id="photo" src="https://picsum.photos/600/400?random=1" alt="Foto random">
+
+  <div class="buttons">
+    <button id="like-btn">👍 Like</button>
+    <button id="dislike-btn">👎 Dislike</button>
+  </div>
+
+  <div class="comment-box">
+    <input type="text" id="comment-input" placeholder="Escribe un comentario...">
+    <button id="send-btn">Enviar</button>
+  </div>
+
+  <div class="counters">
+    <span>👍 <strong id="like-count">0</strong></span>
+    <span>👎 <strong id="dislike-count">0</strong></span>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://ejwvilwqahblibthcnkd.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqd3ZpbHdxYWhibGlidGhjbmtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNzM0NjQsImV4cCI6MjA5ODc0OTQ2NH0.5OjfElUeHrMS0JSmbYmMp0jgy_gc6X1Iv60WqdLSDYE";
+
+  const { createClient } = supabase;
+  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: {
+      // Evita que el navegador cachee las peticiones GET/HEAD de conteo,
+      // que si no quedan "pegadas" al primer valor y el contador no se mueve.
+      fetch: (url, options = {}) => fetch(url, { ...options, cache: "no-store" }),
+    },
+  });
+
+  const statusEl = document.getElementById("status");
+  const likeCountEl = document.getElementById("like-count");
+  const dislikeCountEl = document.getElementById("dislike-count");
+  const commentInput = document.getElementById("comment-input");
+
+  function showStatus(msg, isError = false) {
+    statusEl.textContent = msg;
+    statusEl.style.color = isError ? "#c0392b" : "#888";
+    if (msg) setTimeout(() => { statusEl.textContent = ""; }, 3000);
+  }
+
+  async function refreshCounts() {
+    const [{ count: likes, error: likeError }, { count: dislikes, error: dislikeError }] = await Promise.all([
+      client.from("reacciones").select("*", { count: "exact", head: true }).eq("tipo", "like"),
+      client.from("reacciones").select("*", { count: "exact", head: true }).eq("tipo", "dislike"),
+    ]);
+
+    if (likeError || dislikeError) {
+      showStatus("Error al cargar contadores", true);
+      return;
+    }
+
+    likeCountEl.textContent = likes ?? 0;
+    dislikeCountEl.textContent = dislikes ?? 0;
+  }
+
+  async function sendReaction(tipo, comentario = "") {
+    const { error } = await client.from("reacciones").insert([{ tipo, comentario }]);
+    if (error) {
+      showStatus("Error al guardar: " + error.message, true);
+      return false;
+    }
+    return true;
+  }
+
+  document.getElementById("like-btn").addEventListener("click", async () => {
+    const ok = await sendReaction("like");
+    if (ok) {
+      showStatus("¡Gracias por tu like!");
+      likeCountEl.textContent = Number(likeCountEl.textContent) + 1;
+      refreshCounts();
+    }
+  });
+
+  document.getElementById("dislike-btn").addEventListener("click", async () => {
+    const ok = await sendReaction("dislike");
+    if (ok) {
+      showStatus("Gracias por tu feedback");
+      dislikeCountEl.textContent = Number(dislikeCountEl.textContent) + 1;
+      refreshCounts();
+    }
+  });
+
+  document.getElementById("send-btn").addEventListener("click", async () => {
+    const comentario = commentInput.value.trim();
+    if (!comentario) {
+      showStatus("Escribe algo antes de enviar", true);
+      return;
+    }
+    const ok = await sendReaction("comentario", comentario);
+    if (ok) {
+      showStatus("Comentario enviado, ¡gracias!");
+      commentInput.value = "";
+    }
+  });
+
+  commentInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("send-btn").click();
+  });
+
+  refreshCounts();
+</script>
+
+</body>
+</html>
