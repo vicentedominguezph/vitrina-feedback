@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard - Vitrina Feedback</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f4f4f7;
+    min-height: 100vh;
+    margin: 0;
+    padding: 24px;
+    display: flex;
+    justify-content: center;
+  }
+  .wrapper {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  h1 {
+    text-align: center;
+    margin: 0;
+    font-size: 1.4rem;
+    color: #333;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    padding: 24px;
+  }
+  .counter-card {
+    text-align: center;
+  }
+  .counter-label {
+    font-size: 0.95rem;
+    color: #888;
+    margin-bottom: 6px;
+  }
+  .counter-value {
+    font-size: 3.5rem;
+    font-weight: 700;
+    color: #4f46e5;
+    line-height: 1;
+  }
+  .chart-card canvas {
+    max-height: 280px;
+  }
+  .comments-card h2 {
+    margin: 0 0 12px 0;
+    font-size: 1.1rem;
+    color: #333;
+  }
+  #comments-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  #comments-list li {
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+  }
+  #comments-list li:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  .comment-text {
+    color: #333;
+    font-size: 1rem;
+  }
+  .comment-time {
+    color: #999;
+    font-size: 0.8rem;
+    margin-top: 2px;
+  }
+  .empty {
+    color: #999;
+    font-size: 0.9rem;
+    text-align: center;
+  }
+  .status {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #888;
+    min-height: 18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+  <h1>Dashboard en vivo</h1>
+
+  <div class="card counter-card">
+    <div class="counter-label">Total de comentarios recibidos</div>
+    <div class="counter-value" id="comment-count">0</div>
+  </div>
+
+  <div class="card chart-card">
+    <canvas id="reactions-chart"></canvas>
+  </div>
+
+  <div class="card comments-card">
+    <h2>Últimos comentarios</h2>
+    <ul id="comments-list">
+      <li class="empty">Aún no hay comentarios</li>
+    </ul>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://ejwvilwqahblibthcnkd.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqd3ZpbHdxYWhibGlidGhjbmtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNzM0NjQsImV4cCI6MjA5ODc0OTQ2NH0.5OjfElUeHrMS0JSmbYmMp0jgy_gc6X1Iv60WqdLSDYE";
+
+  const { createClient } = supabase;
+  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: {
+      fetch: (url, options = {}) => fetch(url, { ...options, cache: "no-store" }),
+    },
+  });
+
+  const statusEl = document.getElementById("status");
+  const commentCountEl = document.getElementById("comment-count");
+  const commentsListEl = document.getElementById("comments-list");
+
+  function showStatus(msg, isError = false) {
+    statusEl.textContent = msg;
+    statusEl.style.color = isError ? "#c0392b" : "#888";
+    if (msg) setTimeout(() => { statusEl.textContent = ""; }, 3000);
+  }
+
+  function formatTime(iso) {
+    const d = new Date(iso);
+    return d.toLocaleString("es-CL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+  }
+
+  const ctx = document.getElementById("reactions-chart");
+  const chart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: ["Likes", "Dislikes"],
+      datasets: [{
+        label: "Total",
+        data: [0, 0],
+        backgroundColor: ["#4f46e5", "#e5484d"],
+        borderRadius: 8,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+
+  async function refreshChart() {
+    const [{ count: likes, error: likeError }, { count: dislikes, error: dislikeError }] = await Promise.all([
+      client.from("reacciones").select("*", { count: "exact", head: true }).eq("tipo", "like"),
+      client.from("reacciones").select("*", { count: "exact", head: true }).eq("tipo", "dislike"),
+    ]);
+
+    if (likeError || dislikeError) {
+      showStatus("Error al cargar el gráfico", true);
+      return;
+    }
+
+    chart.data.datasets[0].data = [likes ?? 0, dislikes ?? 0];
+    chart.update();
+  }
+
+  async function refreshCommentCount() {
+    const { count, error } = await client
+      .from("reacciones")
+      .select("*", { count: "exact", head: true })
+      .eq("tipo", "comentario");
+
+    if (error) {
+      showStatus("Error al cargar el contador", true);
+      return;
+    }
+
+    commentCountEl.textContent = count ?? 0;
+  }
+
+  async function refreshRecentComments() {
+    const { data, error } = await client
+      .from("reacciones")
+      .select("comentario, created_at")
+      .eq("tipo", "comentario")
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (error) {
+      showStatus("Error al cargar comentarios", true);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      commentsListEl.innerHTML = '<li class="empty">Aún no hay comentarios</li>';
+      return;
+    }
+
+    commentsListEl.innerHTML = data.map((row) => `
+      <li>
+        <div class="comment-text">${escapeHtml(row.comentario ?? "")}</div>
+        <div class="comment-time">${formatTime(row.created_at)}</div>
+      </li>
+    `).join("");
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function refreshAll() {
+    await Promise.all([refreshChart(), refreshCommentCount(), refreshRecentComments()]);
+  }
+
+  client
+    .channel("postgres_changes")
+    .on("postgres_changes", { event: "*", schema: "public", table: "reacciones" }, () => {
+      refreshAll();
+    })
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") showStatus("Conectado en tiempo real");
+    });
+
+  refreshAll();
+</script>
+
+</body>
+</html>

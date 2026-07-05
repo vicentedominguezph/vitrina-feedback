@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encuesta de Capacitación</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f4f4f7;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    padding: 24px;
+    max-width: 420px;
+    width: 100%;
+  }
+  h1 {
+    font-size: 1.3rem;
+    text-align: center;
+    margin: 0 0 24px;
+    color: #222;
+  }
+  .question {
+    margin-bottom: 24px;
+  }
+  .question label {
+    display: block;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 12px;
+  }
+  .scale {
+    display: flex;
+    gap: 8px;
+  }
+  .scale button {
+    flex: 1;
+    font-size: 1.2rem;
+    font-weight: 600;
+    padding: 14px 0;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    background: #fafafa;
+    cursor: pointer;
+    transition: transform 0.1s ease, background 0.2s ease, border-color 0.2s ease;
+  }
+  .scale button:active { transform: scale(0.94); }
+  .scale button.active {
+    background: #4f46e5;
+    border-color: #4f46e5;
+    color: #fff;
+  }
+  .yesno {
+    display: flex;
+    gap: 12px;
+  }
+  .yesno button {
+    flex: 1;
+    font-size: 1.1rem;
+    font-weight: 600;
+    padding: 14px 0;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    background: #fafafa;
+    cursor: pointer;
+    transition: transform 0.1s ease, background 0.2s ease, border-color 0.2s ease;
+  }
+  .yesno button:active { transform: scale(0.96); }
+  .yesno button.active.si {
+    background: #22c55e;
+    border-color: #22c55e;
+    color: #fff;
+  }
+  .yesno button.active.no {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: #fff;
+  }
+  textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-family: inherit;
+    resize: vertical;
+  }
+  #submit-btn {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 10px;
+    background: #4f46e5;
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease, opacity 0.2s ease;
+  }
+  #submit-btn:hover { background: #4338ca; }
+  #submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .status {
+    margin-top: 14px;
+    font-size: 0.9rem;
+    text-align: center;
+    color: #888;
+    min-height: 18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Encuesta de Capacitación</h1>
+
+  <div class="question">
+    <label>1. ¿Qué tan clara fue la capacitación?</label>
+    <div class="scale" id="claridad-scale">
+      <button type="button" data-value="1">1</button>
+      <button type="button" data-value="2">2</button>
+      <button type="button" data-value="3">3</button>
+      <button type="button" data-value="4">4</button>
+      <button type="button" data-value="5">5</button>
+    </div>
+  </div>
+
+  <div class="question">
+    <label>2. ¿Aplicarías esto en tu trabajo?</label>
+    <div class="yesno" id="aplicaria-yesno">
+      <button type="button" class="si" data-value="si">Sí</button>
+      <button type="button" class="no" data-value="no">No</button>
+    </div>
+  </div>
+
+  <div class="question">
+    <label>3. Comentario (opcional)</label>
+    <textarea id="comentario-input" placeholder="Escribe aquí..."></textarea>
+  </div>
+
+  <button id="submit-btn">Enviar</button>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://ejwvilwqahblibthcnkd.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqd3ZpbHdxYWhibGlidGhjbmtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNzM0NjQsImV4cCI6MjA5ODc0OTQ2NH0.5OjfElUeHrMS0JSmbYmMp0jgy_gc6X1Iv60WqdLSDYE";
+
+  const { createClient } = supabase;
+  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const statusEl = document.getElementById("status");
+  const submitBtn = document.getElementById("submit-btn");
+  const comentarioInput = document.getElementById("comentario-input");
+
+  let claridad = null;
+  let aplicaria = null;
+
+  function showStatus(msg, isError = false) {
+    statusEl.textContent = msg;
+    statusEl.style.color = isError ? "#c0392b" : "#888";
+  }
+
+  document.querySelectorAll("#claridad-scale button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      claridad = Number(btn.dataset.value);
+      document.querySelectorAll("#claridad-scale button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+
+  document.querySelectorAll("#aplicaria-yesno button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      aplicaria = btn.dataset.value;
+      document.querySelectorAll("#aplicaria-yesno button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+
+  submitBtn.addEventListener("click", async () => {
+    if (!claridad) {
+      showStatus("Por favor selecciona qué tan clara fue la capacitación", true);
+      return;
+    }
+    if (!aplicaria) {
+      showStatus("Por favor indica si aplicarías esto en tu trabajo", true);
+      return;
+    }
+
+    submitBtn.disabled = true;
+    showStatus("Enviando...");
+
+    const { error } = await client.from("encuestas").insert([{
+      claridad,
+      aplicaria,
+      comentario: comentarioInput.value.trim(),
+    }]);
+
+    submitBtn.disabled = false;
+
+    if (error) {
+      showStatus("Error al guardar: " + error.message, true);
+      return;
+    }
+
+    showStatus("¡Gracias por tu respuesta!");
+    claridad = null;
+    aplicaria = null;
+    document.querySelectorAll("#claridad-scale button, #aplicaria-yesno button").forEach((b) => b.classList.remove("active"));
+    comentarioInput.value = "";
+  });
+</script>
+
+</body>
+</html>
